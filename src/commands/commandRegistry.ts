@@ -1,8 +1,8 @@
 import { setUser, readConfig } from "../config";
 import { createUser, getUserByName, resetDb, getUsers } from "src/lib/db/queries/users";
 import { XMLParser } from "fast-xml-parser";
-import { createFeed } from "src/lib/db/queries/feeds";
-import { feeds, users as usersTable } from "src/lib/db/schema";
+import { createFeed, getFeeds } from "src/lib/db/queries/feeds";
+import { feeds as feedsTable, users as usersTable } from "src/lib/db/schema";
 export type CommandHandler = (cmdName: string, ...args: string[]) => Promise<void>;
 export type CommandsRegistry = Record<string, CommandHandler>;
 export type RSSFeed = {
@@ -19,7 +19,7 @@ export type RSSItem = {
     description: string;
     pubDate: string;
   };
-export type Feed = typeof feeds.$inferSelect;
+export type Feed = typeof feedsTable.$inferSelect;
 export type User = typeof usersTable.$inferSelect;
 
 
@@ -179,4 +179,9 @@ export const addfeed = async (_cmdName: string, name: string, url: string) => {
 export const printFeed = async (feed: Feed, user: User) => {
     console.log(`Feed: ${feed.name}`);
     console.log(`User: ${user.name}`);
+};
+
+export const feeds = async () => {
+    const feeds = await getFeeds();
+    feeds.forEach(feed => printFeed(feed.feeds, feed.users));
 };

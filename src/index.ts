@@ -1,7 +1,8 @@
 import { setUser, readConfig } from "./config";
 import { CommandsRegistry, handlerLogin, registerCommand,
          runCommand, register, reset, users, agg, addfeed,
-         feeds } from "./commands/commandRegistry";
+         feeds, handlerFollow, handlerListFeeds, handlerListFeedFollows, unfollow } from "./commands/commandRegistry";
+import { loggedIn } from "./middleware/middleware";
 
 async function main() {
   const registry: CommandsRegistry = {};
@@ -10,8 +11,12 @@ async function main() {
   registerCommand(registry, "reset", reset);
   registerCommand(registry, "users", users);
   registerCommand(registry, "agg", agg);
-  registerCommand(registry, "addfeed", addfeed);
+  registerCommand(registry, "addfeed", loggedIn(addfeed));
   registerCommand(registry, "feeds", feeds);
+  registerCommand(registry, "follow", loggedIn(handlerFollow));
+  registerCommand(registry, "feeds", loggedIn(handlerListFeeds));
+  registerCommand(registry, "following", loggedIn(handlerListFeedFollows));
+  registerCommand(registry, "unfollow", loggedIn(unfollow));
 
   const args = process.argv.slice(2);
   if (args.length === 0) {

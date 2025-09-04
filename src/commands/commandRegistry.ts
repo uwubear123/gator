@@ -1,8 +1,9 @@
 import { setUser, readConfig } from "../config";
-import { createUser, getUserByName, resetDb, getUsers } from "src/lib/db/queries/users";
+import { createUser, getUserByName, resetDb, getUsers, getUserById } from "src/lib/db/queries/users";
 import { XMLParser } from "fast-xml-parser";
-import { createFeed, getFeeds } from "src/lib/db/queries/feeds";
+import { createFeed, getFeedByUrl, getFeeds } from "src/lib/db/queries/feeds";
 import { feeds as feedsTable, users as usersTable } from "src/lib/db/schema";
+import { createFeedFollow, deleteFeedFollow, getFeedFollowsForUser } from "src/lib/db/queries/follows";
 export type CommandHandler = (cmdName: string, ...args: string[]) => Promise<void>;
 export type CommandsRegistry = Record<string, CommandHandler>;
 export type RSSFeed = {
@@ -163,25 +164,104 @@ export const agg = async () => {
     console.log(JSON.stringify(feed, null, 2));
 }
 
-export const addfeed = async (_cmdName: string, name: string, url: string) => {
+
+// COMMANDS FOR FEEDS
+
+export const addfeed = async (_cmdName: string, user: User, name: string, url: string) => {
     if (!name || !url) {
         throw new Error("The addfeed argument expects two arguments, the name and the url");
     }
-    const user = await getUserByName(readConfig().currentUserName!);
-    if (!user) {
-        throw new Error("User not found");
-    }
     
     const [feed] = await createFeed(name, url, user.id);
-    printFeed(feed, user);    
+    printFeed(feed, user); 
+    
+    const feedFollow = await createFeedFollow(user.id, feed.id);
+    printFeedFollow(user.name, feedFollow.feedName);
 };
 
 export const printFeed = async (feed: Feed, user: User) => {
-    console.log(`Feed: ${feed.name}`);
-    console.log(`User: ${user.name}`);
+    console.log(`* ID:            ${feed.id}`);
+    console.log(`* Created:       ${feed.createdAt}`);
+    console.log(`* Updated:       ${feed.updatedAt}`);
+    console.log(`* name:          ${feed.name}`);
+    console.log(`* URL:           ${feed.url}`);
+    console.log(`* User:          ${user.name}`);
 };
 
 export const feeds = async () => {
     const feeds = await getFeeds();
     feeds.forEach(feed => printFeed(feed.feeds, feed.users));
 };
+
+// COMMANDS FOR FEEDFOLLOWS
+
+export async function handlerFollow(cmdName: string, user: User, ...args: string[]) {
+    if (args.length === 0) {
+        throw new Error("The follow argument expects a single argument, the feed name")
+    }
+
+    const feedURL = args[0];
+    const feed = await getFeedByUrl(feedURL);
+    if (!feed) {
+        throw new Error("Feed not found");
+    }
+
+    const ffRow = await createFeedFollow(user.id, feed[0].id);
+    console.log(`Feed follow created`);
+    printFeedFollow(ffRow.userName, ffRow.feedName);
+
+}
+
+
+export async function handlerListFeedFollows(_cmdName: string, user: User) {
+
+    const feedFollows = await getFeedFollowsForUser(user.id);
+    if (feedFollows.length === 0){
+        console.log("No feed follows found for this user");
+        return;
+    }
+    
+    console.log(`Feed follows for user %s:`, user.id);
+    for (let ff of feedFollows) {
+        console.log(`* %s`, ff.feedname);
+    }
+}
+
+export async function handlerListFeeds(_cmdName: string) {
+    const feeds = await getFeeds();
+  
+    if (feeds.length === 0) {
+      console.log(`No feeds found.`);
+      return;
+    }
+  
+    console.log(`Found %d feeds:\n`, feeds.length);
+    for (let feed of feeds) {
+      const user = await getUserById(feed.feeds.userId);
+      if (!user) {
+        throw new Error(`Failed to find user for feed ${feed.feeds.id}`);
+      }
+  
+      printFeed(feed.feeds, user);
+      console.log(`=====================================`);
+    }
+}
+
+
+export function printFeedFollow(username: string, feedname: string) {
+    console.log(`* User:          ${username}`);
+    console.log(`* Feed:          ${feedname}`);
+}
+
+export async function unfollow(cmdName: string, user: User, ...args: string[]) {
+    if (args.length === 0) {
+        throw new Error("The unfollow argument expects a single argument, the feed name")
+    }
+    const feedName = args[0];
+    const feedFollow = await getFeedFollowsForUser(user.id);
+    if (!feedFollow) {
+        throw new Error("Feed follow not found");
+    }
+    await deleteFeedFollow(user.id, feedFollow[0].feedId);
+    console.log(`Feed follow deleted`);
+}

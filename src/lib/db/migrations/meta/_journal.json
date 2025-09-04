@@ -15,6 +15,20 @@
       "when": 1756919464226,
       "tag": "0001_lame_triton",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1757006779006,
+      "tag": "0002_slow_overlord",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1757007116377,
+      "tag": "0003_lumpy_rage",
+      "breakpoints": true
     }
   ]
 }

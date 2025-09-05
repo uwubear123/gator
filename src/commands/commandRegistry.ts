@@ -4,6 +4,7 @@ import { XMLParser } from "fast-xml-parser";
 import { createFeed, getFeedByUrl, getFeeds, getNextFeedToFetch, markFeedFetched } from "src/lib/db/queries/feeds";
 import { feeds as feedsTable, users as usersTable } from "src/lib/db/schema";
 import { createFeedFollow, deleteFeedFollow, getFeedFollowsForUser } from "src/lib/db/queries/follows";
+import { createPost, getPostsForUser } from "src/lib/db/queries/posts";
 export type CommandHandler = (cmdName: string, ...args: string[]) => Promise<void>;
 export type CommandsRegistry = Record<string, CommandHandler>;
 export type RSSFeed = {
@@ -159,27 +160,35 @@ export const fetchFeed = async (feedURL: string) => {
     return metadata;
 }
 
-export const agg = async (cmdName: string, time_between_reqs: string) => {
-    const timeBetweenReqs = parseDuration(time_between_reqs);
-    console.log(`Collecting feeds every ${timeBetweenReqs}ms`);
-
-    await scrapeFeeds().catch((err) => {
-        console.error("Error fetching feed:", err);
-    });
-
-    const interval = setInterval(() => {
-        scrapeFeeds().catch((err) => {
-            console.error("Error fetching feed:", err);
-        });
-    }, timeBetweenReqs);
-
-    return new Promise<void>((resolve) => {
+export const agg = async (cmdName: string, ...args: string[]) => {
+    if (args.length !== 1) {
+        throw new Error(`usage: ${cmdName} <time_between_reqs>`);
+      }
+    
+      const timeArg = args[0];
+      const timeBetweenRequests = parseDuration(timeArg);
+      if (!timeBetweenRequests) {
+        throw new Error(
+          `invalid duration: ${timeArg} — use format 1h 30m 15s or 3500ms`,
+        );
+      }
+    
+      console.log(`Collecting feeds every ${timeArg}...`);
+    
+      // run the first scrape immediately
+      scrapeFeeds().catch(handleError);
+    
+      const interval = setInterval(() => {
+        scrapeFeeds().catch(handleError);
+      }, timeBetweenRequests);
+    
+      await new Promise<void>((resolve) => {
         process.on("SIGINT", () => {
-            console.log("Shutting down feed aggregator...");
-            clearInterval(interval);
-            resolve();
+          console.log("Shutting down feed aggregator...");
+          clearInterval(interval);
+          resolve();
         });
-    });
+      });
 }
 
 export const parseDuration = (duration: string): number => {
@@ -307,15 +316,51 @@ export async function unfollow(cmdName: string, user: User, ...args: string[]) {
 }
 
 
-export async function scrapeFeeds() {
+async function scrapeFeeds() {
     const feed = await getNextFeedToFetch();
     if (!feed) {
-        console.log(`No feeds to fetch`);
-        return;
+      console.log(`No feeds to fetch.`);
+      return;
     }
-    markFeedFetched(feed.id);
+    console.log(`Found a feed to fetch!`);
+    scrapeFeed(feed);
+  }
+  
+  async function scrapeFeed(feed: Feed) {
+    await markFeedFetched(feed.id);
+  
     const feedData = await fetchFeed(feed.url);
-    for (const item of feedData.channel.item) {
-        console.log(`* ${item.title}`);
+  
+    console.log(
+      `Feed ${feed.name} collected, ${feedData.channel.item.length} posts found`,
+    );
+
+    for (let item of feedData.channel.item) {
+        console.log(`Found post: %s`, item.title);
+    
+        const now = new Date();
+    
+        await createPost(feed.id, item.title, item.link, item.description);
+      }
+  }
+  
+function handleError(err: unknown) {
+    console.error(
+      `Error scraping feeds: ${err instanceof Error ? err.message : err}`,
+    );
+}
+
+
+// POSTS COMMANDS
+
+export async function browse(cmdName: string, ...args: string[]) {
+    const [username, limitStr] = args;
+    const limit = limitStr ? parseInt(limitStr, 10) : 2;
+    
+    if (!username) {
+        throw new Error("Username is required");
     }
+
+    const posts = await getPostsForUser(username);
+    posts.slice(-limit).forEach(post => console.log(`* ${post.posts.title}`));
 }

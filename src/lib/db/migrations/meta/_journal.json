@@ -36,6 +36,13 @@
       "when": 1757084772511,
       "tag": "0004_small_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1757087873748,
+      "tag": "0005_tan_kang",
+      "breakpoints": true
     }
   ]
 }

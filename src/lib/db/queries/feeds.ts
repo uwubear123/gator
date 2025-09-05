@@ -25,6 +25,6 @@ export async function markFeedFetched(id: string) {
 }
 
 export async function getNextFeedToFetch() {
-    const feed = await db.execute(sql`SELECT * FROM feeds WHERE last_fetched_at IS NULL ORDER BY created_at ASC LIMIT 1`);
-    return feed;
+    const result = await db.select().from(feeds).where(sql`last_fetched_at IS NULL`).orderBy(sql`created_at ASC`).limit(1);
+    return result[0] || null;
 }

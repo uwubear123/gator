@@ -1,7 +1,7 @@
 import { setUser, readConfig } from "../config";
 import { createUser, getUserByName, resetDb, getUsers, getUserById } from "src/lib/db/queries/users";
 import { XMLParser } from "fast-xml-parser";
-import { createFeed, getFeedByUrl, getFeeds } from "src/lib/db/queries/feeds";
+import { createFeed, getFeedByUrl, getFeeds, getNextFeedToFetch, markFeedFetched } from "src/lib/db/queries/feeds";
 import { feeds as feedsTable, users as usersTable } from "src/lib/db/schema";
 import { createFeedFollow, deleteFeedFollow, getFeedFollowsForUser } from "src/lib/db/queries/follows";
 export type CommandHandler = (cmdName: string, ...args: string[]) => Promise<void>;
@@ -159,9 +159,49 @@ export const fetchFeed = async (feedURL: string) => {
     return metadata;
 }
 
-export const agg = async () => {
-    const feed = await fetchFeed("https://www.wagslane.dev/index.xml");
-    console.log(JSON.stringify(feed, null, 2));
+export const agg = async (cmdName: string, time_between_reqs: string) => {
+    const timeBetweenReqs = parseDuration(time_between_reqs);
+    console.log(`Collecting feeds every ${timeBetweenReqs}ms`);
+
+    await scrapeFeeds().catch((err) => {
+        console.error("Error fetching feed:", err);
+    });
+
+    const interval = setInterval(() => {
+        scrapeFeeds().catch((err) => {
+            console.error("Error fetching feed:", err);
+        });
+    }, timeBetweenReqs);
+
+    return new Promise<void>((resolve) => {
+        process.on("SIGINT", () => {
+            console.log("Shutting down feed aggregator...");
+            clearInterval(interval);
+            resolve();
+        });
+    });
+}
+
+export const parseDuration = (duration: string): number => {
+    const regex = /^(\d+)(ms|s|m|h)$/;
+    const match = duration.match(regex);
+    if (!match) {
+        throw new Error("Invalid duration format");
+    }
+    const num = parseInt(match[1]);
+    const unit = match[2];
+    switch (unit) {
+        case "d":
+            return num * 24 * 60 * 60 * 1000;
+        case "h":
+            return num * 60 * 60 * 1000;
+        case "m":
+            return num * 60 * 1000;
+        case "s":
+            return num * 1000;
+        default:
+            throw new Error("Invalid duration unit");
+    }
 }
 
 
@@ -264,4 +304,18 @@ export async function unfollow(cmdName: string, user: User, ...args: string[]) {
     }
     await deleteFeedFollow(user.id, feedFollow[0].feedId);
     console.log(`Feed follow deleted`);
+}
+
+
+export async function scrapeFeeds() {
+    const feed = await getNextFeedToFetch();
+    if (!feed) {
+        console.log(`No feeds to fetch`);
+        return;
+    }
+    markFeedFetched(feed.id);
+    const feedData = await fetchFeed(feed.url);
+    for (const item of feedData.channel.item) {
+        console.log(`* ${item.title}`);
+    }
 }
